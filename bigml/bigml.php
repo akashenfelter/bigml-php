@@ -372,14 +372,14 @@ class BigML {
                                    $retries = 0)
    {
       $r = $resource;
-      if (is_string($resource)) 
+      if (is_string($resource)) {
          $r = json_decode($resource);
-
+      }
       if ($r instanceof \STDClass && property_exists($r, "resource")) {
          $resource = $r->resource;
       }
 
-      if (preg_match('/(source|dataset|model|evaluation|ensemble|batchprediction|batchcentroid|prediction|cluster|centroid|anomaly|anomalyscore|sample|project|correlation|statisticaltest|association|logisticregression|library|execution|script|topicmodel|deepnet)(\/)([a-z,0-9]{24}|[a-z,0-9]{27})$/i', $resource, $result)) {
+      if (preg_match('/(source|dataset|model|evaluation|ensemble|batchprediction|batchcentroid|prediction|cluster|centroid|anomaly|anomalyscore|sample|project|correlation|statisticaltest|association|logisticregression|library|execution|script|topicmodel|deepnet|fusion)(\/)([a-z,0-9]{24}|[a-z,0-9]{27})$/i', $resource, $result)) {
          $count = 0;
          $status = $this->_check_resource_status($resource, $queryString); 
          while ($count<$retries && !$status["ready"]) {
@@ -587,7 +587,7 @@ class BigML {
    }
    ##########################################################################
    #
-   # Models
+   # Logistic Regressions
    # https://bigml.com/developers/logisticregressions
    #
    ##########################################################################
@@ -2732,6 +2732,100 @@ class BigML {
       return $rest->getResponse();
    }
 
+   ##########################################################################
+   #
+   # Fusion
+   # https://bigml.com/developers/fusions
+   #
+   ##########################################################################
+
+   public function create_fusion($modelIds, $data=array(), $waitTime=3000, $retries=10) {
+      /* Creates a fusion from a list of model ids. Valid models include
+       models, ensembles, logistic regressions, deepnets, and fusions.*/
+  
+      $models=array();
+   
+      foreach ($modelIds as $var => $modelId) {
+         $resource = $this->_check_resource($modelId, null, $waitTime, $retries);
+         if ($resource == null || $resource['type'] != ("model" || "ensemble" || "logisticregression" || "deepnet" || "fusion")) {
+            error_log("Wrong model id");
+            return null;
+         } elseif ($resource["status"] != BigMLRequest::FINISHED) {
+            error_log($resource['message']);
+            return null;
+         }
+         array_push($models, $resource["id"]);
+      }
+  
+      $rest = new BigMLRequest('CREATE', 'fusion', $this);
+
+      if (sizeof($models) > 1) {
+         $data["models"] = $models;
+      } else {
+         $data["model"] = $models[0];
+      }
+
+      $rest->setData($data);
+      $rest->setHeader('Content-Type', 'application/json');
+      $rest->setHeader('Content-Length', strlen(json_encode($data)));
+      return $rest->getResponse();
+   }
+
+   public function get_fusion($fusion, $queryString=null, $shared_username=null,  $shared_api_key=null)
+   {
+      /*
+        Retrieves a fusion.  The fusion parameter should be a string
+        containing the fusion id or the dict returned by
+        create_fusion.  As a fusion is an evolving object that is
+        processed until it reaches the FINISHED or FAULTY state, the
+        function will return a dict that encloses the fusion values
+        and state info available at the time it is called.  If this is
+        a shared fusion, the username and sharing api key must also be
+        provided.
+      */
+
+      $rest = $this->get_resource_request($fusion, "fusion", "GET", $queryString, true, 3000, 0, $shared_username, $shared_api_key);
+      if ($rest == null) return null;
+      return $rest->getResponse();
+   }
+
+   public function list_fusions($queryString=null)
+   {
+      /*
+        Lists all your fusions
+      */
+      $rest = new BigMLRequest('LIST', 'fusion', $this);
+
+      if ($queryString!=null) {
+         $rest->setQueryString($queryString);
+      }
+
+      return $rest->getResponse();
+   }
+
+   public function update_fusion($fusionId, $data, $waitTime=3000, $retries=10) {
+
+      /*
+        Updates a fusion
+      */
+      $rest = $this->get_resource_request($fusionId, "fusion", "UPDATE", null, true, $waitTime, $retries);
+      if ($rest == null) return null;
+
+      $rest->setData($data);
+      $rest->setHeader('Content-Type', 'application/json');
+      $rest->setHeader('Content-Length', strlen(json_encode($data)));
+      return $rest->getResponse();
+   }
+
+   public function delete_fusion($fusionId) {
+      /*
+        Deletes a fusion
+      */
+      $rest = $this->get_resource_request($fusionId, "fusion", "DELETE", null);
+      if ($rest == null) return null;
+      return $rest->getResponse();
+   }
+
    private function _create_remote_source($file_url, $options=array()) {
       $rest = new BigMLRequest('CREATE', 'source', $this);
       $options['remote'] = $file_url;
@@ -2808,6 +2902,10 @@ class BigML {
 
    public function _checkDeepnetId($stringID) {
       return preg_match("/^deepnet\/[a-f,0-9]{24}$/i", $stringID) ? true : false;
+   }
+
+   public function _checkFusionId($stringID) {
+      return preg_match("/^fusion\/[a-f,0-9]{24}$/i", $stringID) ? true : false;
    }
 
    public function get_fields($resource) {
@@ -2941,6 +3039,7 @@ class BigML {
    }
 
    private function check_resource_type($resourceId, $resourceType) {
+
       $resource = null;
       if ($resourceId instanceof \STDClass && property_exists($resourceId, "resource")) {
          $resource = $resourceId->resource;
@@ -2948,6 +3047,7 @@ class BigML {
          $resource = $resourceId;
       } else {
          error_log("Wrong ". $resourceType . " id");
+
          return null;
       }
       if (preg_match('/((shared|public)\/)?('.$resourceType. ')(\/)([a-z,0-9]{24}|[a-z,0-9]{27})$/i', $resource, $result)) {
